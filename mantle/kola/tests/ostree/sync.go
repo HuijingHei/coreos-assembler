@@ -169,13 +169,12 @@ storage:
       contents:
         inline: |
           #!/bin/bash
-          for i in $(seq 6); do
-            (while sudo rm -f /var/tmp/data$i/test; do
-              for x in $(seq 6); do
-                sudo dd if=/dev/urandom of=/var/tmp/data$i/test bs=4096 count=2048 conv=notrunc oflag=append &> /dev/null;
-                sleep 0.5;
-              done;
-            done) &
+          while true; do
+            for i in $(seq 6); do
+              sudo dd if=/dev/urandom of=/var/tmp/data$i/test bs=4096 count=2048 conv=notrunc oflag=append &> /dev/null
+              sleep 0.5
+              sudo rm -f /var/tmp/data$i/test
+            done
           done`)
 	opts := platform.MachineOptions{
 		MinMemory: 2048,
@@ -212,34 +211,32 @@ storage:
 		c.Fatalf("Timeout(1m) to get nfs mount: %v", err)
 	}
 
-	doSyncTest(c, nfs_client)
+	// doSyncTest(c, nfs_client)
+	doSyncTest(c, nfs_client, nfs_server.Machine)
 }
 
-func doSyncTest(c cluster.TestCluster, client platform.Machine) {
+func doSyncTest(c cluster.TestCluster, client platform.Machine, m platform.Machine) {
+	// Do simple touch to make sure nfs server works
 	c.RunCmdSync(client, "sudo touch /var/tmp/data3/test")
 	// Continue writing while doing test
-	go func() {
-		_, err := c.SSH(client, "sudo sh /usr/local/bin/nfs-random-write.sh")
-		if err != nil {
-			c.Fatalf("failed to start write-to-nfs: %v", err)
-		}
-	}()
+	// gets run using systemd unit
+	_, err := c.SSH(client, "sudo systemd-run --property KillMode=mixed --unit=nfs-random-write --no-block '/usr/local/bin/nfs-random-write.sh'")
+	if err != nil {
+		c.Fatalf("failed to run nfs-random-write: %v", err)
+	}
 
 	// Create a stage deploy using kargs while writing
 	c.RunCmdSync(client, "sudo rpm-ostree kargs --append=test=1")
-
-	netdevices := c.MustSSH(client, "ls /sys/class/net | grep -v lo")
-	netdevice := string(netdevices)
-	if netdevice == "" {
-		c.Fatalf("failed to get net device")
-	}
-	c.Log("Set link down and rebooting.")
-	// Skip the error check as it is expected
-	cmd := fmt.Sprintf("sudo systemd-run sh -c 'ip link set %s down && sleep 2 && systemctl reboot'", netdevice)
-	_, _ = c.SSH(client, cmd)
+	// block NFS traffic on nfs server
+	c.RunCmdSync(m, "sudo iptables -A INPUT -p tcp --dport 2049 -j DROP")
 
 	time.Sleep(5 * time.Second)
-	err := util.Retry(8, 10*time.Second, func() error {
+	err = client.Reboot()
+	if err != nil {
+		c.Fatalf("Couldn't reboot machine: %v", err)
+	}
+
+	err = util.Retry(12, 10*time.Second, func() error {
 		// Look for the kernel argument test=1
 		kernelArguments, err := c.SSH(client, "cat /proc/cmdline")
 		if err != nil {
