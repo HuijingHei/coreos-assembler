@@ -77,6 +77,7 @@ func init() {
 	// See https://github.com/coreos/coreos-assembler/issues/4117#issuecomment-3495048106
 	register.RegisterTest(&register.Test{
 		Run:         ostreeSyncTest,
+		Timeout:     20 * time.Minute,
 		ClusterSize: 0,
 		Name:        "ostree.sync",
 		Description: "Verify ostree can sync the filesystem with disconnected the NFS volume.",
