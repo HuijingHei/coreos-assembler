@@ -148,6 +148,10 @@ func ostreeSyncTest(c cluster.TestCluster) {
 	// Start test machine
 	butane := conf.Butane(`variant: fcos
 version: 1.5.0
+kernel_arguments:
+  should_exist:
+    - systemd.log_level=debug
+    - systemd.log_target=console
 storage:
   directories:
   - path: /var/tmp/data1
