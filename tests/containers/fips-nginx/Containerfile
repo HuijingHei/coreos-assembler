@@ -1,0 +1,16 @@
+FROM quay.io/fedora/fedora:43
+
+RUN dnf install -y nginx && dnf clean all
+
+COPY nginx.conf /etc/nginx/nginx.conf
+COPY index.html /usr/share/nginx/html/index.html
+
+# TLS material
+COPY fips-server.crt /etc/nginx/tls/fips-server.crt
+COPY fips-server.key /etc/nginx/tls/fips-server.key
+
+RUN chmod 600 /etc/nginx/tls/fips-server.key
+
+EXPOSE 8443
+
+CMD ["nginx", "-g", "daemon off;"]
